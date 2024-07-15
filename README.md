@@ -14,7 +14,7 @@ Our model leverages the architecture proposed in the [TrOCR](https://arxiv.org/a
 
 The following is the graph containing train and validation losses and BLEU score on validation: 
 
-<img src="https://github.com/d-gurgurov/im2latex/blob/main/assets/plots.png?raw=true" alt="training curves" width="500"/>
+<img src="https://github.com/d-gurgurov/im2latex/blob/main/assets/plots.png?raw=true" alt="training curves" width="700"/>
 
 ## Training Data
             
