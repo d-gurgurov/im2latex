@@ -1,13 +1,40 @@
-# Image-to-LaTeX Converter for Mathematical Formulas and Text - im2latex
+from huggingface_hub import HfApi, Repository, login
+from transformers import (
+    VisionEncoderDecoderModel,
+    AutoTokenizer
+)
 
-## Introduction
+login(token='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')
 
-This project aims to train an encoder-decoder model that produces LaTeX code from images of formulas and text. Utilizing a diverse collection of image-to-LaTeX data, we compare the BLEU performance of our model with other similar models, such as [pix2tex](https://github.com/lukas-blecher/LaTeX-OCR) and [TexTeller](https://github.com/OleehyO/TexTeller/tree/main). Our model is available of [HuggingFace](https://huggingface.co/DGurgurov/im2latex).
+# initializing API and repository
+api = HfApi()
+model_name = "DGurgurov/im2latex"
+api.create_repo(repo_id=model_name, exist_ok=True)
 
-## Model Architecture
+# cloning the repository
+checkpoint_dir = f"checkpoints/checkpoint_epoch_6_step_19400"
 
-Our model leverages the architecture proposed in the [TrOCR](https://arxiv.org/abs/2109.10282) model by combining the Swin Transformer for image understanding and GPT-2 for text generation. 
+# saving model and tokenizer
+api.upload_folder(
+    folder_path=checkpoint_dir,
+    path_in_repo='',
+    repo_id=model_name
+)
 
+
+# Copy README to the repository
+readme = """
+# Your Model Name
+
+This model is a VisionEncoderDecoderModel fine-tuned on a dataset for generating LaTeX formulas from images.
+
+## Model Details
+
+- **Encoder**: Swin Transformer
+- **Decoder**: GPT-2
+- **Framework**: PyTorch
+- **DDP (Distributed Data Parallel)**: Used for training
+            
 ## Training Data
             
 The data is taken from [OleehyO/latex-formulas](https://huggingface.co/datasets/OleehyO/latex-formulas). The data was divided into 80:10:10 for train, val and test. The splits were made as follows:
@@ -55,6 +82,16 @@ print("Generated LaTeX formula:", generated_texts[0])
 ## Training Script
 The training script for this model can be found in the following repository: [GitHub](https://github.com/d-gurgurov/im2latex)
 
-## License
+License
 [MIT]
+"""
 
+with open(f'README.md', 'w') as f:
+    f.write(readme)
+
+
+api.upload_file(
+path_or_fileobj=f'README.md',
+path_in_repo='README.md',
+repo_id=model_name
+)

@@ -22,7 +22,6 @@ from tqdm import tqdm
 import os
 import json
 import time
-from math import ceil
 
 from train_config import Config
 
@@ -393,8 +392,9 @@ def evaluate(model, val_dataloader, device, tokenizer, bleu_metric, max_batches=
 train_losses = train(model, train_dataloader, optimizer, scheduler, device, num_epochs, eval_steps, val_dataloader, tokenizer, bleu_metric, start_epoch=0, local_rank=ddp_local_rank)
 
 # loading the best model from the checkpoint directory and evaluating it
-checkpoint_dir = f"checkpoints/checkpoint_step_{best_checkpoint_step}"
+checkpoint_dir = f"checkpoints/checkpoint_epoch_6_step_19400"
 best_model = VisionEncoderDecoderModel.from_pretrained(checkpoint_dir).to(device)
+best_model = DDP(best_model, device_ids=[ddp_local_rank], output_device=ddp_local_rank, find_unused_parameters=False)
 best_tokenizer = AutoTokenizer.from_pretrained(checkpoint_dir)
 
 # evaluating on test set
