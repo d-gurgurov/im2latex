@@ -58,9 +58,6 @@ generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=True
 print("Generated LaTeX formula:", generated_texts[0])
 ```
 
-## Training Script
-The training script for this model can be found in the following repository: [GitHub](https://github.com/d-gurgurov/im2latex)
-
 ## License
 [MIT]
 
