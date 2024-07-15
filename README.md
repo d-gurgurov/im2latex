@@ -8,6 +8,8 @@ This project aims to train an encoder-decoder model that produces LaTeX code fro
 
 Our model leverages the architecture proposed in the [TrOCR](https://arxiv.org/abs/2109.10282) model by combining the Swin Transformer for image understanding and GPT-2 for text generation. 
 
+<img src="https://github.com/d-gurgurov/im2latex/blob/main/assets/im2latex.png?raw=true" alt="training curves" width="500"/>
+
 ## Training Curves
 
 The following is the graph containing train and validation losses and BLEU score on validation: 
