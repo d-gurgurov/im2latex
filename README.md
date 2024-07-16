@@ -32,8 +32,8 @@ test_ds = val_test_split["test"]
 ## Test Evaluation Metrics
 
 The model was evaluated on a test set with the following results:
-- **Test Loss**: 0.10473818009443304
-- **Test BLEU Score**: 0.6661951245257148
+- **Test Loss**: 0.10
+- **Test BLEU Score**: 0.67
 
 ## Usage
 
@@ -44,16 +44,16 @@ from transformers import VisionEncoderDecoderModel, AutoTokenizer, AutoFeatureEx
 import torch
 from PIL import Image
 
-# Load model, tokenizer, and feature extractor
-model = VisionEncoderDecoderModel.from_pretrained("your-username/your-model-name")
-tokenizer = AutoTokenizer.from_pretrained("your-username/your-model-name")
-feature_extractor = AutoFeatureExtractor.from_pretrained("your-username/your-model-name")
+# load model, tokenizer, and feature extractor
+model = VisionEncoderDecoderModel.from_pretrained("DGurgurov/im2latex")
+tokenizer = AutoTokenizer.from_pretrained("DGurgurov/im2latex")
+feature_extractor = AutoFeatureExtractor.from_pretrained("microsoft/swin-base-patch4-window7-224-in22k") # using the original feature extractor for now
 
-# Prepare an image
+# prepare an image
 image = Image.open("path/to/your/image.png")
 pixel_values = feature_extractor(images=image, return_tensors="pt").pixel_values
 
-# Generate LaTeX formula
+# generate LaTeX formula
 generated_ids = model.generate(pixel_values)
 generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
 

@@ -7,12 +7,12 @@ from torch.optim import AdamW
 
 from transformers import (
     VisionEncoderDecoderModel,
-    SwinConfig,
-    GPT2Config,
     AutoTokenizer,
     AutoFeatureExtractor,
     get_linear_schedule_with_warmup
 )
+
+from peft import LoraConfig, get_peft_model
 
 from PIL import Image
 import evaluate
@@ -59,45 +59,63 @@ tokenizer = AutoTokenizer.from_pretrained(Config.tokenizer_name)
 tokenizer.pad_token = tokenizer.eos_token
 feature_extractor = AutoFeatureExtractor.from_pretrained(Config.feature_extractor)
 
-# loading dataset and splitting into train, val, test
-dataset = load_dataset(Config.train_dataset_path, Config.split_dataset_name)
-train_val_split = dataset["train"].train_test_split(test_size=Config.val_test_size, seed=Config.seed)
-train_ds = train_val_split["train"]
-val_test_split = train_val_split["test"].train_test_split(test_size=0.5, seed=Config.seed)
-val_ds = val_test_split["train"]
-test_ds = val_test_split["test"]
+# loading new dataset
+new_dataset = load_dataset("linxy/LaTeX_OCR", "synthetic_handwrite")
+
+# combining train, val, and test splits and then splitting into train and val
+combined_ds = new_dataset['train'].train_test_split(test_size=0.1, seed=Config.seed)
+train_ds = combined_ds['train']
+val_ds = combined_ds['test']
+
+def filter_dataset(dataset):
+    def is_valid_sample(sample):
+        try:
+            image = sample['image']
+            latex = sample['text']
+            return image is not None and latex is not None and len(latex) > 0
+        except:
+            return False
+
+    return dataset.filter(is_valid_sample)
+
+train_ds = filter_dataset(train_ds)
+val_ds = filter_dataset(val_ds)
 
 if master_process:
-    print("Length of test set before processing", len(train_ds))
-    print("Length of test set before processing", len(val_ds))
-    print("Length of test set before processing", len(test_ds))
+    print("Length of train set after splitting:", len(train_ds))
+    print("Length of val set after splitting:", len(val_ds))
 
-# setting up model configuration
-encoder_config = SwinConfig.from_pretrained(Config.encoder_name)
-decoder_config = GPT2Config.from_pretrained(Config.decoder_name)
+# setting up the model
+model = VisionEncoderDecoderModel.from_pretrained("DGurgurov/im2latex").to(device)
 
-# initializing the VisionEncoderDecoderModel
-model = VisionEncoderDecoderModel.from_encoder_decoder_pretrained(
-    Config.encoder_name,
-    Config.decoder_name
+# setting up the adapter
+lora_config = LoraConfig(
+    r=16,
+    lora_alpha=16,
+    target_modules=[
+        # Encoder (Swin Transformer) modules
+        "attn.qkv",
+        "attn.proj",
+        "mlp.fc1",
+        "mlp.fc2",
+        # Decoder (GPT-2) modules
+        "c_attn",
+        "c_proj",
+        "c_fc",
+        "attn.c_proj",
+    ],
+    lora_dropout=0.1,
+    bias="none"
+    # task_type="VL"  # Vision-Language task
 )
 
-# setting special tokens
-model.config.decoder_start_token_id = tokenizer.bos_token_id
-model.config.pad_token_id = tokenizer.pad_token_id
-model.config.eos_token_id = tokenizer.eos_token_id
+# applying lora
+model = get_peft_model(model, lora_config)
+if master_process:  
+    model.print_trainable_parameters() 
 
-# setting decoding parameters
-model.config.max_length = 256
-model.config.early_stopping = True
-model.config.no_repeat_ngram_size = 3
-model.config.length_penalty = 2.0
-model.config.num_beams = 4
-model.decoder.resize_token_embeddings(len(tokenizer))
-
-# compiling model on gpus for accelerating the training process
-model.to(device)
 torch.compile(model)
+model = DDP(model, device_ids=[ddp_local_rank], output_device=ddp_local_rank, find_unused_parameters=False)
 
 # dataset loading class
 class LatexDataset(Dataset):
@@ -131,33 +149,37 @@ class LatexDataset(Dataset):
 
     def __getitem__(self, idx):
         item = self.dataset[idx]
-        latex_sequence = item['latex_formula']
+        latex_sequence = item['text']
         image = item['image']
 
         # image processing
-        if self.phase == 'train':
-            img = self.train_transform(image)
-            img = Image.fromarray((img * 255).astype(np.uint8))
-        else:
-            img = image.resize(self.image_size)
-
         try:
             pixel_values = self.feature_extractor(
-                images=img,
+                images=image.resize(self.image_size),
                 return_tensors="pt",
             ).pixel_values.squeeze()
+            if pixel_values.ndim == 0:
+                raise ValueError("Processed image has no dimensions")
         except Exception as e:
             print(f"Error processing image at index {idx}: {str(e)}")
-            # providing a default tensor in case of error
+            # provide a default tensor in case of error
             pixel_values = torch.zeros((3, self.image_size[0], self.image_size[1]))
 
-        latex_tokens = self.tokenizer(
-            latex_sequence,
-            padding=False,
-            max_length=self.max_length,
-            truncation=True,
-            return_tensors='pt'  # returning PyTorch tensors
-        ).input_ids.squeeze()  # removing the batch dimension
+        # tokenization
+        try:
+            latex_tokens = self.tokenizer(
+                latex_sequence,
+                padding=False,
+                max_length=self.max_length,
+                truncation=True,
+                return_tensors='pt'
+            ).input_ids.squeeze()
+            if latex_tokens.ndim == 0:
+                raise ValueError("Tokenized latex has no dimensions")
+        except Exception as e:
+            print(f"Error tokenizing latex at index {idx}: {str(e)}")
+            # provide a default tensor in case of error
+            latex_tokens = torch.zeros(1, dtype=torch.long)
 
         return {
             "pixel_values": pixel_values,
@@ -167,10 +189,19 @@ class LatexDataset(Dataset):
 # custom data collator
 def data_collator(batch):
     pixel_values = torch.stack([item['pixel_values'] for item in batch])
-    labels = [item['labels'] for item in batch]
     
-    # padding the labels
-    labels = pad_sequence(labels, batch_first=True, padding_value=tokenizer.pad_token_id)
+    # Handle labels, ensuring it's always a list of tensors
+    labels = [item['labels'] for item in batch if item['labels'].numel() > 0]
+    
+    if len(labels) == 0:
+        # if all labels are empty, return a dummy tensor
+        labels = torch.zeros((len(batch), 1), dtype=torch.long)
+    elif len(labels) == 1:
+        # if there's only one sample, add a dimension to make it a batch
+        labels = labels[0].unsqueeze(0)
+    else:
+        # for multiple samples, use pad_sequence as before
+        labels = pad_sequence(labels, batch_first=True, padding_value=tokenizer.pad_token_id)
     
     return {
         'pixel_values': pixel_values,
@@ -180,19 +211,21 @@ def data_collator(batch):
 # creating datasets and dataloader
 train_dataset = LatexDataset(train_ds, tokenizer, feature_extractor, phase='train')
 val_dataset = LatexDataset(val_ds, tokenizer, feature_extractor, phase='val')
-test_dataset = LatexDataset(test_ds, tokenizer, feature_extractor, phase='test')
 
 train_sampler = DistributedSampler(train_dataset)
 val_sampler = DistributedSampler(val_dataset, shuffle=False)
-test_sampler = DistributedSampler(test_dataset, shuffle=False)
+
+train_dataloader = DataLoader(train_dataset, batch_size=Config.batch_size_train, sampler=train_sampler, collate_fn=data_collator, drop_last=True )
+val_dataloader = DataLoader(val_dataset, batch_size=Config.batch_size_val, sampler=val_sampler, collate_fn=data_collator, drop_last=True )
 
 # training parameters
-batch_size_train = Config.batch_size_train
-batch_size_val = Config.batch_size_val
+learning_rate = Config.learning_rate
 num_epochs = Config.num_epochs  # using epochs for printing purposes actually, but control by max_steps
+warmup_steps = Config.warmup_steps
+eval_steps = 100
 
 # effective batch size per GPU (or per process)
-effective_batch_size = batch_size_train * ddp_world_size
+effective_batch_size = Config.batch_size_train * ddp_world_size
 if master_process:
     print("Effective batch size:", effective_batch_size)
 
@@ -200,16 +233,6 @@ if master_process:
 max_steps = (len(train_dataset) // effective_batch_size) * num_epochs
 if master_process:
     print("Max steps:", max_steps)
-
-learning_rate = Config.learning_rate
-warmup_steps = Config.warmup_steps
-eval_steps = Config.eval_steps
-
-best_checkpoint_step = None
-
-train_dataloader = DataLoader(train_dataset, batch_size=batch_size_train, sampler=train_sampler, collate_fn=data_collator)
-val_dataloader = DataLoader(val_dataset, batch_size=batch_size_val, sampler=val_sampler, collate_fn=data_collator)
-test_dataloader = DataLoader(test_dataset, batch_size=batch_size_val, sampler=test_sampler, collate_fn=data_collator)
 
 # initializing optimizer and scheduler
 optimizer = AdamW(model.parameters(), lr=learning_rate, betas=Config.betas, eps=Config.eps)
@@ -222,11 +245,10 @@ scheduler = get_linear_schedule_with_warmup(
 # metric for val purposes
 bleu_metric = evaluate.load(Config.bleu)
 
-# setup of Distributed Data Parallel (DDP)
-model = DDP(model, device_ids=[ddp_local_rank], output_device=ddp_local_rank, find_unused_parameters=False)
+best_checkpoint_step = None
 
-# training loop
-def train(model, train_dataloader, optimizer, scheduler, device, max_epochs, eval_steps, val_dataloader, tokenizer, bleu_metric, start_epoch=0, local_rank=0):
+# training loop for LoRA fine-tuning
+def train_lora(model, train_dataloader, optimizer, scheduler, device, num_epochs, eval_steps, val_dataloader, tokenizer, bleu_metric, local_rank=0):
     model.train()
     train_losses = [] # list to store losses for whole epoch averaging
     interval_losses = [] # list to store interval losses (updates every eval_steps)
@@ -239,10 +261,10 @@ def train(model, train_dataloader, optimizer, scheduler, device, max_epochs, eva
     # calculating total steps per epoch
     total_steps_per_epoch = len(train_dataloader)
 
-    for epoch in range(start_epoch, max_epochs):
+    for epoch in range(num_epochs):
         epoch_start_time = time.time()
 
-        for step, batch in enumerate(tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{max_epochs}", disable=local_rank != 0)):
+        for step, batch in enumerate(tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{num_epochs}", disable=local_rank != 0)):
             pixel_values = batch['pixel_values'].to(device)
             labels = batch['labels'].to(device)
 
@@ -269,7 +291,7 @@ def train(model, train_dataloader, optimizer, scheduler, device, max_epochs, eva
             global_step = epoch * total_steps_per_epoch + step + 1
 
             # logging and averaging loss every eval_steps
-            if global_step % eval_steps == 0 or (epoch == max_epochs - 1 and step == total_steps_per_epoch - 1):
+            if global_step % eval_steps == 0 or (epoch == num_epochs - 1 and step == total_steps_per_epoch - 1):
                 # computing the average loss for the last eval_steps
                 average_loss = np.mean(interval_losses)
                 train_losses.append(average_loss)
@@ -306,7 +328,7 @@ def train(model, train_dataloader, optimizer, scheduler, device, max_epochs, eva
                         best_val_loss = val_loss
 
                         # saving the new model checkpoint
-                        checkpoint_name = f"checkpoint_epoch_{epoch+1}_step_{global_step}"
+                        checkpoint_name = f"checkpoint_step_{global_step}"
                         checkpoint_path = os.path.join(checkpoint_dir, checkpoint_name)
                         os.makedirs(checkpoint_path, exist_ok=True)  # creating directory if it doesn't exist
                         
@@ -319,7 +341,7 @@ def train(model, train_dataloader, optimizer, scheduler, device, max_epochs, eva
                         # TODO: doesn't work properly - only deletes a few iterations ago, not the previous one
                         if best_checkpoint_step is not None:
                             for filename in os.listdir(checkpoint_dir):
-                                if filename.startswith(f"checkpoint_epoch_{epoch+1}_step_") and filename != f"checkpoint_epoch_{epoch+1}_step_{best_checkpoint_step}.pt":
+                                if filename.startswith(f"checkpoint_step_") and filename != f"checkpoint_step_{best_checkpoint_step}.pt":
                                     try:
                                         step_number = int(filename.split("_")[-1])
                                         if step_number < (best_checkpoint_step - 200):
@@ -386,18 +408,24 @@ def evaluate(model, val_dataloader, device, tokenizer, bleu_metric, max_batches=
 
     return avg_val_loss, avg_bleu
 
+# starting LoRA fine-tuning
+train_losses = train_lora(model, train_dataloader, optimizer, scheduler, device, num_epochs, eval_steps, val_dataloader, tokenizer, bleu_metric, local_rank=ddp_local_rank)
 
-# starting training from epoch 0
-train_losses = train(model, train_dataloader, optimizer, scheduler, device, num_epochs, eval_steps, val_dataloader, tokenizer, bleu_metric, start_epoch=0, local_rank=ddp_local_rank)
+# loading the final evaluation dataset
+eval_dataset = load_dataset("linxy/LaTeX_OCR", "human_handwrite")
+combined_eval_ds = eval_dataset['train'] + eval_dataset['validation'] + eval_dataset['test']
+eval_dataset = LatexDataset(combined_eval_ds, tokenizer, feature_extractor, phase='test')
 
-# loading the best model from the checkpoint directory and evaluating it
-checkpoint_dir = f"checkpoints/checkpoint_epoch_6_step_19400"
+eval_dataloader = DataLoader(eval_dataset, batch_size=Config.batch_size_val, collate_fn=data_collator)
+
+# evaluating on the final test dataset
+checkpoint_dir = f"checkpoints/checkpoint_step_{best_checkpoint_step}"
 best_model = VisionEncoderDecoderModel.from_pretrained(checkpoint_dir).to(device)
 best_model = DDP(best_model, device_ids=[ddp_local_rank], output_device=ddp_local_rank, find_unused_parameters=False)
 best_tokenizer = AutoTokenizer.from_pretrained(checkpoint_dir)
 
 # evaluating on test set
-test_loss, test_bleu_scores = evaluate(best_model, test_dataloader, device, best_tokenizer, bleu_metric)
+test_loss, test_bleu_scores = evaluate(best_model, eval_dataloader, device, best_tokenizer, bleu_metric)
 print(f"Test Loss: {test_loss}")
 print(f"Test BLEU Score: {test_bleu_scores}")
 
