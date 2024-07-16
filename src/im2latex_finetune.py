@@ -106,7 +106,6 @@ lora_config = LoraConfig(
     ],
     lora_dropout=0.1,
     bias="none"
-    # task_type="VL"  # Vision-Language task
 )
 
 # applying lora
@@ -151,6 +150,10 @@ class LatexDataset(Dataset):
         item = self.dataset[idx]
         latex_sequence = item['text']
         image = item['image']
+
+        # converting RGBA to RGB for the test set --> some images have alphas
+        if image.mode == 'RGBA':
+            image = image.convert('RGB')
 
         # image processing
         try:
