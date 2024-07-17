@@ -16,7 +16,7 @@ from peft import LoraConfig, get_peft_model
 
 from PIL import Image
 import evaluate
-from datasets import load_dataset
+from datasets import load_dataset, concatenate_datasets
 import numpy as np
 from tqdm import tqdm
 import os
@@ -106,6 +106,7 @@ lora_config = LoraConfig(
     ],
     lora_dropout=0.1,
     bias="none"
+    # task_type="VL"  # Vision-Language task
 )
 
 # applying lora
@@ -392,7 +393,7 @@ def evaluate(model, val_dataloader, device, tokenizer, bleu_metric, max_batches=
             dist.all_reduce(step_loss_tensor, op=dist.ReduceOp.AVG)
             val_losses.append(step_loss_tensor.item())
 
-            # generating predictions
+            # generating predictions 
             generated_ids = model.module.generate(pixel_values, num_beams=4, max_length=256, early_stopping=True)
             generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
             label_texts = tokenizer.batch_decode(labels, skip_special_tokens=True)
@@ -416,7 +417,10 @@ train_losses = train_lora(model, train_dataloader, optimizer, scheduler, device,
 
 # loading the final evaluation dataset
 eval_dataset = load_dataset("linxy/LaTeX_OCR", "human_handwrite")
-combined_eval_ds = eval_dataset['train'] + eval_dataset['validation'] + eval_dataset['test']
+combined_eval_ds = concatenate_datasets([eval_dataset['train'], eval_dataset['validation'], eval_dataset['test']])
+
+if master_process:
+    print("Test set size:", len(combined_eval_ds))
 eval_dataset = LatexDataset(combined_eval_ds, tokenizer, feature_extractor, phase='test')
 
 eval_dataloader = DataLoader(eval_dataset, batch_size=Config.batch_size_val, collate_fn=data_collator)
@@ -424,7 +428,7 @@ eval_dataloader = DataLoader(eval_dataset, batch_size=Config.batch_size_val, col
 # evaluating on the final test dataset
 checkpoint_dir = f"checkpoints/checkpoint_step_{best_checkpoint_step}"
 best_model = VisionEncoderDecoderModel.from_pretrained(checkpoint_dir).to(device)
-best_model = DDP(best_model, device_ids=[ddp_local_rank], output_device=ddp_local_rank, find_unused_parameters=False)
+
 best_tokenizer = AutoTokenizer.from_pretrained(checkpoint_dir)
 
 # evaluating on test set
