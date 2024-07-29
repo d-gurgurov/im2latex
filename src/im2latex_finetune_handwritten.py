@@ -86,7 +86,7 @@ if master_process:
     print("Length of val set after splitting:", len(val_ds))
 
 # setting up the model
-model = VisionEncoderDecoderModel.from_pretrained("DGurgurov/im2latex").to(device)
+model = VisionEncoderDecoderModel.from_pretrained("OleehyO/TexTeller").to(device)
 
 # setting up the adapter
 lora_config = LoraConfig(
@@ -443,7 +443,7 @@ def evaluate(model, val_dataloader, device, tokenizer, bleu_metric, max_batches=
     return avg_val_loss, avg_bleu
 
 # starting LoRA fine-tuning
-train_losses = train_lora(model, train_dataloader, optimizer, scheduler, device, num_epochs, eval_steps, val_dataloader, tokenizer, bleu_metric, local_rank=ddp_local_rank)
+# train_losses = train_lora(model, train_dataloader, optimizer, scheduler, device, num_epochs, eval_steps, val_dataloader, tokenizer, bleu_metric, local_rank=ddp_local_rank)
 
 
 # evaluating on the final test dataset

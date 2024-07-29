@@ -22,11 +22,11 @@ class Config:
     learning_rate = 1e-4
     warmup_steps = 400
     max_grad_norm = 1.0
-    betas = (0.95, 0.98) 
+    betas = (0.95, 0.98)
     eps=1e-08
 
     # image parameters
-    image_size=(224, 468)
+    image_size=(448, 448)
     
     # checkpoint parameters
     checkpoint_dir = "checkpoints"

@@ -4,11 +4,11 @@ from transformers import (
     AutoTokenizer
 )
 
-login(token='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')
+login(token='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')
 
 # initializing API and repository
 api = HfApi()
-model_name = "DGurgurov/im2latex"
+model_name = "Enorenio/im2latex"
 api.create_repo(repo_id=model_name, exist_ok=True)
 
 # cloning the repository
