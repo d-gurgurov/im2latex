@@ -1,0 +1,23 @@
+universe                = docker
+docker_image            = nvidia/cuda:11.4.3-runtime-ubuntu20.04
+executable              = execute.sh
+
+# Python file to run, can also include arguments
+arguments               = im2latex_finetune_handwritten_texteller.py
+
+# Paths to output, error, and log files
+output                  = /home/hlcv_team030/team030/condor_logs/demo.$(ClusterId).$(ProcId).out
+error                   = /home/hlcv_team030/team030/condor_logs/demo.$(ClusterId).$(ProcId).err
+log                     = /home/hlcv_team030/team030/condor_logs/demo.$(ClusterId).log
+
+should_transfer_files   = YES
+
+# Remove this when using interactive mode
+when_to_transfer_output = ON_EXIT
+
+request_GPUs = 5
+request_CPUs = 1
+request_memory = 20G
+requirements = UidDomain == "cs.uni-saarland.de" 
++WantGPUHomeMounted = true
+queue 1
