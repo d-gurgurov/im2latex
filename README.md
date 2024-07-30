@@ -2,21 +2,21 @@
 
 ## Introduction
 
-This project aims to train an encoder-decoder model that produces LaTeX code from images of formulas and text. Utilizing a diverse collection of image-to-LaTeX data, we compare the BLEU performance of our model with other similar models, such as [pix2tex](https://github.com/lukas-blecher/LaTeX-OCR) and [TexTeller](https://github.com/OleehyO/TexTeller/tree/main). Our model is available of [HuggingFace](https://huggingface.co/DGurgurov/im2latex).
+This project aims to train an encoder-decoder model that produces LaTeX code from images of formulas and text. Utilizing a diverse collection of image-to-LaTeX data, we build two models - a base 240M params model, capable of translating computer-generated formulas into LaTeX, and LoRa adapter, trained for translating hand-written formulas into LaTeX. Our base-model is available of [HuggingFace](https://huggingface.co/DGurgurov/im2latex), and the LoRa adapter will be available soon!
 
-## Model Architecture
+## Base-Model Architecture
 
-Our model leverages the architecture proposed in the [TrOCR](https://arxiv.org/abs/2109.10282) model by combining the Swin Transformer for image understanding and GPT-2 for text generation. 
+Our base-model leverages the architecture proposed in the [TrOCR](https://arxiv.org/abs/2109.10282) model by combining the Swin Transformer for image understanding and GPT-2 for text generation. We start training the model by initializing its weights with the weights of these pre-trained models. 
 
 <img src="https://github.com/d-gurgurov/im2latex/blob/main/assets/im2latex.png?raw=true" alt="architecture" width="700"/>
 
-## Training Curves
+### Training Curves
 
 The following is the graph containing train and validation losses and BLEU score on validation: 
 
 <img src="https://github.com/d-gurgurov/im2latex/blob/main/assets/plots.png?raw=true" alt="training curves" width="500"/>
 
-## Training Data
+### Training Data
             
 The data is taken from [OleehyO/latex-formulas](https://huggingface.co/datasets/OleehyO/latex-formulas). The data was divided into 80:10:10 for train, val and test. The splits were made as follows:
 
@@ -29,13 +29,13 @@ val_ds = val_test_split["train"]
 test_ds = val_test_split["test"]
 ```                     
 
-## Test Evaluation Metrics
+### Test Evaluation Metrics
 
 The model was evaluated on a test set with the following results:
 - **Test Loss**: 0.10
 - **Test BLEU Score**: 0.67
 
-## Usage
+### Usage
 
 You can use the model directly with the `transformers` library:
 
@@ -59,6 +59,35 @@ generated_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=True
 
 print("Generated LaTeX formula:", generated_texts[0])
 ```
+
+## Model with LoRa Adapter Architecture
+
+We enhance our pre-trained base model by integrating LoRa adapters into specific layers and blocks, enabling efficient fine-tuning for converting human hand-written formulas into LaTeX.
+
+### Training Curves
+
+The following is the graph containing train and validation losses and BLEU score on validation: 
+
+<img src="https://github.com/d-gurgurov/im2latex/blob/main/assets/lora_handwritten.png?raw=true" alt="training curves" width="500"/>
+
+### Training Data
+            
+The data is taken from [linxy/LaTeX_OCR](https://huggingface.co/datasets/linxy/LaTeX_OCR). The data was originally split into train, val and test. The code for loading the datasets:
+
+```python
+new_dataset = load_dataset("linxy/LaTeX_OCR", "human_handwrite")
+
+train_ds = new_dataset['train']
+val_ds = new_dataset['validation']
+test_ds = new_dataset['test']
+```                     
+
+### Test Evaluation Metrics
+
+The model was evaluated on a test set with the following results:
+- **Test Loss**: 0.02
+- **Test BLEU Score**: 0.67
+
 
 ## License
 [MIT]
