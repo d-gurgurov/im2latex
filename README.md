@@ -8,13 +8,16 @@ This project aims to train an encoder-decoder model that produces LaTeX code fro
 
 Our base-model leverages the architecture proposed in the [TrOCR](https://arxiv.org/abs/2109.10282) model by combining the Swin Transformer for image understanding and GPT-2 for text generation. We start training the model by initializing its weights with the weights of these pre-trained models. 
 
+<div align="center">
 <img src="https://github.com/d-gurgurov/im2latex/blob/main/assets/im2latex.png?raw=true" alt="architecture" width="700"/>
+</div>
 
 ### Training Curves
 
 The following is the graph containing train and validation losses and BLEU score on validation: 
-
+<div align="center">
 <img src="https://github.com/d-gurgurov/im2latex/blob/main/assets/plots.png?raw=true" alt="training curves" width="500"/>
+</div>
 
 ### Training Data
             
@@ -37,7 +40,7 @@ The model was evaluated on a test set with the following results:
 
 ### Usage
 
-You can use the model directly with the `transformers` library:
+You can use the model directly with the `transformers` library (inference.py is available):
 
 ```python
 from transformers import VisionEncoderDecoderModel, AutoTokenizer, AutoFeatureExtractor
@@ -68,7 +71,9 @@ We enhance our pre-trained base model by integrating LoRa adapters into specific
 
 The following is the graph containing train and validation losses and BLEU score on validation: 
 
+<div align="center">
 <img src="https://github.com/d-gurgurov/im2latex/blob/main/assets/lora_handwritten.png?raw=true" alt="training curves" width="500"/>
+</div>
 
 ### Training Data
             
