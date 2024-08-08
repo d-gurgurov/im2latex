@@ -4,7 +4,7 @@ from transformers import (
     AutoTokenizer
 )
 
-login(token='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')
+login(token='*')
 
 # initializing API and repository
 api = HfApi()
