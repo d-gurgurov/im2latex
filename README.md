@@ -4,6 +4,8 @@
 
 This project aims to train an encoder-decoder model that produces LaTeX code from images of formulas and text. Utilizing a diverse collection of image-to-LaTeX data, we build two models - a base 240M params model, capable of translating computer-generated formulas into LaTeX, and LoRa adapter, trained for translating hand-written formulas into LaTeX. Our base-model is available of [HuggingFace](https://huggingface.co/DGurgurov/im2latex), and the LoRa adapter will be available soon!
 
+The paper describing our approach and the conducted experiments is available on [arXiv](https://arxiv.org/abs/2408.04015).
+
 ## Base-Model Architecture
 
 Our base-model leverages the architecture proposed in the [TrOCR](https://arxiv.org/abs/2109.10282) model by combining the Swin Transformer for image understanding and GPT-2 for text generation. We start training the model by initializing its weights with the weights of these pre-trained models. 
@@ -92,6 +94,21 @@ test_ds = new_dataset['test']
 The model was evaluated on a test set with the following results:
 - **Test Loss**: 0.02
 - **Test BLEU Score**: 0.67
+
+**Citation:**
+- If you use this work in your research, please cite our paper:
+
+```bibtex
+@misc{gurgurov2024imagetolatexconvertermathematicalformulas,
+      title={Image-to-LaTeX Converter for Mathematical Formulas and Text}, 
+      author={Daniil Gurgurov and Aleksey Morshnev},
+      year={2024},
+      eprint={2408.04015},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2408.04015}, 
+}
+```
 
 
 ## License
